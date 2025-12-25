@@ -1,18 +1,168 @@
-# MiniSearchEngine
-A simple project that implements a mini search engine in C using linked lists, hash table and tries. It indexes words from a set of documents, implements word frequency count and keyword search. 
+# 🔍 Mini Google - RAG Search Engine
 
-Linked Lists are used in two places: storing document occurrences for each word (which document contains it and how many times), and chaining in the hash table to handle collisions.
+A powerful mini search engine that combines **C data structures** (Trie, Hash Table, Linked Lists) with **AI-powered RAG** (Retrieval-Augmented Generation) using Ollama. Features both a sleek React chat interface and a standalone HTML search dashboard.
 
-Trie provides efficient prefix-based searching and autocomplete functionality. Each path from root to a node marked as is_end represents an indexed word, and each end node stores a linked list of documents containing that word.
+## ✨ Features
 
-Hash Table enables O(1) average-case lookup for exact keyword searches. It maps words directly to their trie nodes, bypassing the need to traverse the trie for known words.
+### 🧠 Core Search Engine (C)
+- **Trie Data Structure** - Efficient prefix-based searching and autocomplete
+- **Hash Table** - O(1) average-case lookup for exact keyword searches
+- **Linked Lists** - Document occurrence tracking and collision handling
+- **Word Frequency Analysis** - Track word occurrences across documents
+- **Multi-Keyword Search** - Find documents containing all specified keywords
 
-Key Features
-The engine supports document indexing where you can index text from files or strings, with automatic word normalization (lowercase, alphabetic only). Word frequency counting tracks how many times each word appears in each document and calculates term frequency (TF). Keyword search uses the hash table for fast exact matches and displays all documents containing the word with frequency counts. Prefix search uses the trie to find all words starting with a given prefix, which is useful for autocomplete. Multi-keyword search finds documents containing all specified keywords and ranks them by combined frequency score.
+### 🤖 AI Integration
+- **Ollama Integration** - Local LLM support (phi model) for intelligent responses
+- **Document Summarization** - AI-powered text summarization
+- **RAG Queries** - Ask questions and get AI-generated answers
 
-How to Use
-Compile with gcc search_engine.c -o search_engine and run with ./search_engine. The demo indexes three sample texts and demonstrates all search features.
-To index your own files, use index_document(engine, "path/to/file.txt") instead of index_text().
+### 💻 Dual Interface
+- **React Chat UI** - Modern ChatGPT-style chat interface with file upload
+- **HTML Dashboard** - Traditional search engine interface with visual stats
 
-Possible Extensions
-You could add an interactive command-line interface with a menu system, implement TF-IDF scoring for better relevance ranking, add phrase searching with quotes, support Boolean operators like OR and NOT, or build a file crawler to index entire directories.
+## 🏗️ Architecture
+
+```
+┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
+│   React/HTML    │◄────►│  Python Bridge   │◄────►│   C Search      │
+│   Frontend      │      │  Server (8080)   │      │   Engine CLI    │
+└─────────────────┘      └────────┬─────────┘      └─────────────────┘
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │  Ollama (LLM)    │
+                         │  localhost:11434 │
+                         └──────────────────┘
+```
+
+## 📁 Project Structure
+
+```
+RAGSearchEngine/
+├── bridgeServer.py      # Python HTTP server (API endpoints)
+├── searchCLI.c          # C search engine CLI wrapper
+├── searchCLI.exe        # Compiled C executable
+├── searchEngine.c       # Core C search engine implementation
+├── index.html           # Standalone HTML search interface
+├── documents/           # Sample text documents
+│   ├── artificial_intelligence.txt
+│   ├── climate_change.txt
+│   ├── quantum_computing.txt
+│   ├── renewable_energy.txt
+│   └── space_exploration.txt
+└── frontend/            # React chat interface
+    ├── src/
+    │   ├── App.tsx
+    │   └── components/
+    │       ├── ChatInterface.tsx
+    │       └── MessageBubble.tsx
+    └── package.json
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- Node.js 18+ (for React frontend)
+- GCC compiler (for C code)
+- [Ollama](https://ollama.ai/) (for AI features)
+
+### 1. Compile the C Search Engine
+```bash
+gcc searchCLI.c -o searchCLI.exe
+```
+
+### 2. Start Ollama (for AI features)
+```bash
+ollama run phi
+```
+
+### 3. Start the Bridge Server
+```bash
+python bridgeServer.py
+```
+
+### 4. Access the Application
+
+**Option A: HTML Interface**
+- Open browser to `http://localhost:8080`
+
+**Option B: React Chat Interface**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+- Open browser to `http://localhost:5173`
+
+## 🔧 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/documents` | GET | Get all indexed documents |
+| `/api/stats` | GET | Get search engine statistics |
+| `/api/search?query=&type=` | GET | Perform search (keyword/prefix/multi) |
+| `/api/autocomplete?q=` | GET | Get autocomplete suggestions |
+| `/api/index` | POST | Index a new document |
+| `/api/rag` | POST | Query AI with RAG |
+| `/api/upload` | POST | Upload file for summarization |
+| `/api/analyze` | POST | Analyze document with C engine |
+
+## 💡 Usage Examples
+
+### Keyword Search
+Search for exact word matches across all documents.
+
+### Prefix Search
+Find all words starting with a given prefix (autocomplete).
+
+### Multi-Keyword Search
+Find documents containing **all** specified keywords, ranked by relevance.
+
+### Document Analysis (C Engine)
+Upload a `.txt` file and analyze it using:
+- **Word Frequency** - Count occurrences of a specific word
+- **Keyword Search** - Find documents containing a keyword
+- **Prefix Search** - Find all words with a given prefix
+
+## 🛠️ Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Search Engine | C (Trie, Hash Table, Linked Lists) |
+| Backend Server | Python (http.server) |
+| AI/LLM | Ollama (phi model) |
+| Chat Frontend | React + TypeScript + Vite |
+| Dashboard Frontend | Vanilla HTML/CSS/JavaScript |
+
+## 📊 Data Structures
+
+### Trie
+- Stores words character by character
+- Enables O(m) prefix search where m = prefix length
+- Each end node contains document occurrence list
+
+### Hash Table
+- DJB2 hash function for word hashing
+- Chaining for collision resolution
+- Direct pointer to trie nodes for O(1) lookup
+
+### Linked Lists
+- Document occurrence tracking (doc_id, frequency)
+- Hash table collision chains
+- Document metadata storage
+
+## 🔮 Possible Extensions
+- TF-IDF scoring for better relevance ranking
+- Phrase searching with quotes
+- Boolean operators (AND, OR, NOT)
+- File crawler to index entire directories
+- Multiple LLM model support
+
+## 📄 License
+
+MIT License - feel free to use and modify!
+
+## 👨‍💻 Author
+
+Created with ❤️ as a demonstration of fundamental data structures in action.
