@@ -9,13 +9,21 @@ interface Message {
     timestamp: Date;
 }
 
+interface ChatSession {
+    id: string;
+    title: string;
+    messages: Message[];
+    createdAt: Date;
+}
+
 const API_BASE = 'http://localhost:8080/api';
 
 export const ChatInterface: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [searchHistory, setSearchHistory] = useState<string[]>([]);
+    const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+    const [currentChatId, setCurrentChatId] = useState<string | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [uploadedDoc, setUploadedDoc] = useState<{ name: string, content: string } | null>(null);
     const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
@@ -25,19 +33,45 @@ export const ChatInterface: React.FC = () => {
     const inputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Load chat sessions from localStorage on mount
     useEffect(() => {
-        const saved = localStorage.getItem('searchHistory');
-        if (saved) setSearchHistory(JSON.parse(saved));
+        const saved = localStorage.getItem('chatSessions');
+        if (saved) {
+            const sessions = JSON.parse(saved).map((s: any) => ({
+                ...s,
+                createdAt: new Date(s.createdAt),
+                messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+            }));
+            setChatSessions(sessions);
+        }
     }, []);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const saveToHistory = (query: string) => {
-        const updated = [query, ...searchHistory.filter(q => q !== query)].slice(0, 15);
-        setSearchHistory(updated);
-        localStorage.setItem('searchHistory', JSON.stringify(updated));
+    // Save chat sessions to localStorage whenever they change
+    const saveChatSessions = (sessions: ChatSession[]) => {
+        setChatSessions(sessions);
+        localStorage.setItem('chatSessions', JSON.stringify(sessions));
+    };
+
+    // Create a new chat session and return the new sessions array
+    const createNewChat = (firstMessage: Message): { chatId: string, newSessions: ChatSession[] } => {
+        const chatId = Date.now().toString();
+        const title = firstMessage.text.length > 30
+            ? firstMessage.text.substring(0, 30) + '...'
+            : firstMessage.text;
+        const newChat: ChatSession = {
+            id: chatId,
+            title,
+            messages: [firstMessage],
+            createdAt: new Date(),
+        };
+        const newSessions = [newChat, ...chatSessions].slice(0, 20); // Keep max 20 chats
+        saveChatSessions(newSessions);
+        setCurrentChatId(chatId);
+        return { chatId, newSessions };
     };
 
     const handleSend = async () => {
@@ -50,8 +84,25 @@ export const ChatInterface: React.FC = () => {
             timestamp: new Date(),
         };
 
-        setMessages(prev => [...prev, userMessage]);
-        saveToHistory(input);
+        const newMessages = [...messages, userMessage];
+        setMessages(newMessages);
+
+        // If no current chat, create one (first message auto-creates chat)
+        let chatId = currentChatId;
+        let currentSessions = chatSessions;
+
+        if (!chatId) {
+            const result = createNewChat(userMessage);
+            chatId = result.chatId;
+            currentSessions = result.newSessions;
+        } else {
+            // Update existing chat with new message
+            currentSessions = chatSessions.map(chat =>
+                chat.id === chatId ? { ...chat, messages: newMessages } : chat
+            );
+            saveChatSessions(currentSessions);
+        }
+
         const query = input;
         setInput('');
         setIsLoading(true);
@@ -72,7 +123,17 @@ export const ChatInterface: React.FC = () => {
                 timestamp: new Date(),
             };
 
-            setMessages(prev => [...prev, aiMessage]);
+            const finalMessages = [...newMessages, aiMessage];
+            setMessages(finalMessages);
+
+            // Update the chat session with AI response using functional update
+            setChatSessions(prevSessions => {
+                const updated = prevSessions.map(chat =>
+                    chat.id === chatId ? { ...chat, messages: finalMessages } : chat
+                );
+                localStorage.setItem('chatSessions', JSON.stringify(updated));
+                return updated;
+            });
         } catch (error) {
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
@@ -80,7 +141,16 @@ export const ChatInterface: React.FC = () => {
                 sender: 'ai',
                 timestamp: new Date(),
             };
-            setMessages(prev => [...prev, errorMessage]);
+            const finalMessages = [...newMessages, errorMessage];
+            setMessages(finalMessages);
+
+            setChatSessions(prevSessions => {
+                const updated = prevSessions.map(chat =>
+                    chat.id === chatId ? { ...chat, messages: finalMessages } : chat
+                );
+                localStorage.setItem('chatSessions', JSON.stringify(updated));
+                return updated;
+            });
         } finally {
             setIsLoading(false);
             inputRef.current?.focus();
@@ -236,12 +306,23 @@ export const ChatInterface: React.FC = () => {
     };
 
     const clearHistory = () => {
-        setSearchHistory([]);
-        localStorage.removeItem('searchHistory');
+        setChatSessions([]);
+        setCurrentChatId(null);
+        setMessages([]);
+        localStorage.removeItem('chatSessions');
     };
 
     const newChat = () => {
+        setCurrentChatId(null);
         setMessages([]);
+    };
+
+    const switchToChat = (chatId: string) => {
+        const chat = chatSessions.find(c => c.id === chatId);
+        if (chat) {
+            setCurrentChatId(chatId);
+            setMessages(chat.messages);
+        }
     };
 
     return (
@@ -316,19 +397,19 @@ export const ChatInterface: React.FC = () => {
 
                 <div className="history-section">
                     <div className="history-header">
-                        <span>Recent</span>
-                        {searchHistory.length > 0 && (
+                        <span>Recent Chats</span>
+                        {chatSessions.length > 0 && (
                             <button onClick={clearHistory} className="clear-btn">Clear</button>
                         )}
                     </div>
                     <div className="history-list">
-                        {searchHistory.map((query, idx) => (
+                        {chatSessions.map((chat) => (
                             <button
-                                key={idx}
-                                className="history-item"
-                                onClick={() => setInput(query)}
+                                key={chat.id}
+                                className={`history-item ${currentChatId === chat.id ? 'active' : ''}`}
+                                onClick={() => switchToChat(chat.id)}
                             >
-                                {query.length > 25 ? query.substring(0, 25) + '...' : query}
+                                {chat.title}
                             </button>
                         ))}
                     </div>

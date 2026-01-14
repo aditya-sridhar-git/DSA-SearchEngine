@@ -17,7 +17,7 @@ import urllib.error
 # Configuration
 PORT = 8080
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "phi"  # Faster model (~10s vs ~30s)
+OLLAMA_MODEL = "gemma:2b"  # Better quality model
 C_EXECUTABLE = "./search_engine"  # Path to compiled C program
 
 class SearchEngineState:
