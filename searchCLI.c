@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 #define ALPHABET_SIZE 26
 #define HASH_SIZE 1000
 #define MAX_WORD_LEN 100
@@ -225,11 +224,29 @@ int index_text(SearchEngine *engine, const char *name, const char *text) {
 
 void json_escape(const char *str, char *out, int max_len) {
   int j = 0;
-  for (int i = 0; str[i] && j < max_len - 2; i++) {
-    if (str[i] == '"' || str[i] == '\\') {
+  for (int i = 0; str[i] && j < max_len - 6; i++) {
+    unsigned char c = (unsigned char)str[i];
+    if (c == '"') {
       out[j++] = '\\';
+      out[j++] = '"';
+    } else if (c == '\\') {
+      out[j++] = '\\';
+      out[j++] = '\\';
+    } else if (c == '\n') {
+      out[j++] = '\\';
+      out[j++] = 'n';
+    } else if (c == '\r') {
+      out[j++] = '\\';
+      out[j++] = 'r';
+    } else if (c == '\t') {
+      out[j++] = '\\';
+      out[j++] = 't';
+    } else if (c < 32) {
+      // Skip other control characters
+      continue;
+    } else {
+      out[j++] = c;
     }
-    out[j++] = str[i];
   }
   out[j] = '\0';
 }
@@ -367,10 +384,135 @@ void output_prefix_result(SearchEngine *engine, const char *prefix) {
   printf("]}");
 }
 
+/* ==================== REPLACE ALL FEATURE ==================== */
+
+// Replace all occurrences of a word in text
+void output_replace_result(const char *text, const char *find_word,
+                           const char *replace_word) {
+  char normalized_find[MAX_WORD_LEN];
+  strncpy(normalized_find, find_word, MAX_WORD_LEN - 1);
+  normalized_find[MAX_WORD_LEN - 1] = '\0';
+  normalize_word(normalized_find);
+
+  if (strlen(normalized_find) < 2) {
+    printf("{\"success\":false,\"error\":\"Search word too short\"}");
+    return;
+  }
+
+  // Count occurrences and build modified text
+  char modified_text[MAX_TEXT_LEN] = "";
+  char *text_copy = strdup(text);
+  char *current = text_copy;
+  char word_buffer[MAX_WORD_LEN];
+  int occurrences = 0;
+  int mod_pos = 0;
+
+  while (*current && mod_pos < MAX_TEXT_LEN - MAX_WORD_LEN) {
+    // Check if we're at a word boundary
+    if (isalpha(*current)) {
+      // Extract word
+      int word_len = 0;
+      char *word_start = current;
+      while (isalpha(*current) && word_len < MAX_WORD_LEN - 1) {
+        word_buffer[word_len++] = *current++;
+      }
+      word_buffer[word_len] = '\0';
+
+      // Normalize and compare
+      char normalized_word[MAX_WORD_LEN];
+      strncpy(normalized_word, word_buffer, MAX_WORD_LEN);
+      normalize_word(normalized_word);
+
+      if (strcmp(normalized_word, normalized_find) == 0) {
+        // Replace with new word
+        occurrences++;
+        int replace_len = strlen(replace_word);
+        if (mod_pos + replace_len < MAX_TEXT_LEN) {
+          strcpy(modified_text + mod_pos, replace_word);
+          mod_pos += replace_len;
+        }
+      } else {
+        // Keep original word
+        if (mod_pos + word_len < MAX_TEXT_LEN) {
+          strncpy(modified_text + mod_pos, word_start, word_len);
+          mod_pos += word_len;
+        }
+      }
+    } else {
+      // Copy non-alpha characters as-is
+      modified_text[mod_pos++] = *current++;
+    }
+  }
+  modified_text[mod_pos] = '\0';
+
+  free(text_copy);
+
+  // Escape the modified text for JSON
+  char escaped_text[MAX_TEXT_LEN * 2];
+  json_escape(modified_text, escaped_text, sizeof(escaped_text));
+
+  printf("{\"success\":true,\"original_word\":\"%s\",\"replacement_word\":\"%s"
+         "\",\"occurrences_replaced\":%d,\"modified_text\":\"%s\"}",
+         normalized_find, replace_word, occurrences, escaped_text);
+}
+
+/* ==================== TOP K WORDS FEATURE ==================== */
+
+typedef struct {
+  char word[MAX_WORD_LEN];
+  int frequency;
+} WordFreq;
+
+// Collect word frequencies from hash table
+void collect_word_frequencies(SearchEngine *engine, WordFreq *words, int *count,
+                              int max_words) {
+  *count = 0;
+  for (int i = 0; i < HASH_SIZE && *count < max_words; i++) {
+    HashEntry *curr = engine->hash_table[i];
+    while (curr && *count < max_words) {
+      strncpy(words[*count].word, curr->word, MAX_WORD_LEN - 1);
+      words[*count].frequency = curr->trie_node->total_freq;
+      (*count)++;
+      curr = curr->next;
+    }
+  }
+}
+
+// Compare function for sorting (descending by frequency)
+int compare_word_freq(const void *a, const void *b) {
+  const WordFreq *wa = (const WordFreq *)a;
+  const WordFreq *wb = (const WordFreq *)b;
+  return wb->frequency - wa->frequency;
+}
+
+void output_topk_result(SearchEngine *engine, int k) {
+  WordFreq words[1000];
+  int count = 0;
+
+  collect_word_frequencies(engine, words, &count, 1000);
+
+  // Sort by frequency descending
+  qsort(words, count, sizeof(WordFreq), compare_word_freq);
+
+  // Output top K
+  int output_count = (k < count) ? k : count;
+
+  printf("{\"success\":true,\"k\":%d,\"total_unique_words\":%d,\"top_words\":[",
+         k, count);
+
+  for (int i = 0; i < output_count; i++) {
+    if (i > 0)
+      printf(",");
+    printf("{\"word\":\"%s\",\"frequency\":%d}", words[i].word,
+           words[i].frequency);
+  }
+  printf("]}");
+}
+
 /* ==================== MAIN ==================== */
 
 int main(int argc, char *argv[]) {
-  if (argc < 3) {
+  if (argc < 2) {
     printf(
         "{\"success\":false,\"error\":\"Usage: searchCLI <command> <args>\"}");
     return 1;
@@ -394,7 +536,7 @@ int main(int argc, char *argv[]) {
 
     int doc_id = index_text(g_engine, name, text);
     output_index_result(g_engine, doc_id);
-  } else if (strcmp(cmd, "freq") == 0) {
+  } else if (strcmp(cmd, "freq") == 0 && argc >= 3) {
     // First we need content to index, read from stdin
     char line[MAX_LINE_LEN];
     char all_text[MAX_TEXT_LEN] = "";
@@ -403,7 +545,7 @@ int main(int argc, char *argv[]) {
     }
     index_text(g_engine, "uploaded_doc", all_text);
     output_freq_result(g_engine, argv[2]);
-  } else if (strcmp(cmd, "search") == 0) {
+  } else if (strcmp(cmd, "search") == 0 && argc >= 3) {
     char line[MAX_LINE_LEN];
     char all_text[MAX_TEXT_LEN] = "";
     while (fgets(line, MAX_LINE_LEN, stdin)) {
@@ -411,7 +553,7 @@ int main(int argc, char *argv[]) {
     }
     index_text(g_engine, "uploaded_doc", all_text);
     output_search_result(g_engine, argv[2]);
-  } else if (strcmp(cmd, "prefix") == 0) {
+  } else if (strcmp(cmd, "prefix") == 0 && argc >= 3) {
     char line[MAX_LINE_LEN];
     char all_text[MAX_TEXT_LEN] = "";
     while (fgets(line, MAX_LINE_LEN, stdin)) {
@@ -419,6 +561,26 @@ int main(int argc, char *argv[]) {
     }
     index_text(g_engine, "uploaded_doc", all_text);
     output_prefix_result(g_engine, argv[2]);
+  } else if (strcmp(cmd, "replace") == 0 && argc >= 4) {
+    // replace <find_word> <replace_word>
+    char line[MAX_LINE_LEN];
+    char all_text[MAX_TEXT_LEN] = "";
+    while (fgets(line, MAX_LINE_LEN, stdin)) {
+      strncat(all_text, line, MAX_TEXT_LEN - strlen(all_text) - 1);
+    }
+    output_replace_result(all_text, argv[2], argv[3]);
+  } else if (strcmp(cmd, "topk") == 0 && argc >= 3) {
+    // topk <k>
+    char line[MAX_LINE_LEN];
+    char all_text[MAX_TEXT_LEN] = "";
+    while (fgets(line, MAX_LINE_LEN, stdin)) {
+      strncat(all_text, line, MAX_TEXT_LEN - strlen(all_text) - 1);
+    }
+    int k = atoi(argv[2]);
+    if (k <= 0)
+      k = 5;
+    index_text(g_engine, "uploaded_doc", all_text);
+    output_topk_result(g_engine, k);
   } else {
     printf("{\"success\":false,\"error\":\"Unknown command: %s\"}", cmd);
     return 1;

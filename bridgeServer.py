@@ -126,6 +126,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         elif self.path.startswith('/api/autocomplete?'):
             # Autocomplete suggestions
             self._handle_autocomplete()
+        elif self.path == '/api/chats':
+            # Get all chat sessions (splay tree)
+            self._get_chats()
         else:
             self._set_headers(404)
             self.wfile.write(b'{"error": "Not found"}')
@@ -144,6 +147,21 @@ class BridgeHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/analyze':
             # Analyze document using C search engine
             self._handle_analyze()
+        elif self.path == '/api/replace':
+            # Replace all occurrences using C engine
+            self._handle_replace()
+        elif self.path == '/api/topk':
+            # Get top K words using C engine
+            self._handle_topk()
+        elif self.path == '/api/chats':
+            # Add chat session (splay tree)
+            self._add_chat()
+        elif self.path == '/api/chats/clear':
+            # Clear all chats (splay tree)
+            self._clear_chats()
+        elif self.path.startswith('/api/chats/'):
+            # Update chat session (splay tree access)
+            self._access_chat()
         else:
             self._set_headers(404)
             self.wfile.write(b'{"error": "Not found"}')
@@ -537,6 +555,201 @@ class BridgeHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._set_headers(500)
             self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _handle_replace(self):
+        """Handle replace all request using C engine (display only, no file save)"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            content = data.get('content', '')
+            find_word = data.get('find', '')
+            replace_word = data.get('replace', '')
+            
+            if not content:
+                raise ValueError("Document content is required")
+            if not find_word:
+                raise ValueError("Find word is required")
+            if not replace_word:
+                raise ValueError("Replace word is required")
+            
+            cli_path = os.path.join(os.path.dirname(__file__), 'searchCLI.exe')
+            
+            if not os.path.exists(cli_path):
+                raise ValueError("C search engine not compiled")
+            
+            result = subprocess.run(
+                [cli_path, 'replace', find_word, replace_word],
+                input=content,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            c_result = json.loads(result.stdout)
+            
+            self._set_headers()
+            self.wfile.write(json.dumps(c_result).encode())
+            
+        except Exception as e:
+            self._set_headers(500)
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _handle_topk(self):
+        """Handle top K words request using C engine"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            content = data.get('content', '')
+            k = data.get('k', 5)
+            
+            if not content:
+                raise ValueError("Document content is required")
+            
+            cli_path = os.path.join(os.path.dirname(__file__), 'searchCLI.exe')
+            
+            if not os.path.exists(cli_path):
+                raise ValueError("C search engine not compiled")
+            
+            result = subprocess.run(
+                [cli_path, 'topk', str(k)],
+                input=content,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            c_result = json.loads(result.stdout)
+            
+            self._set_headers()
+            self.wfile.write(json.dumps(c_result).encode())
+            
+        except Exception as e:
+            self._set_headers(500)
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _get_chats(self):
+        """Get all chat sessions from splay tree"""
+        try:
+            splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
+            
+            if not os.path.exists(splay_path):
+                # Return empty list if splay tree not compiled
+                self._set_headers()
+                self.wfile.write(json.dumps({'success': True, 'count': 0, 'chats': []}).encode())
+                return
+            
+            result = subprocess.run(
+                [splay_path, 'list'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            c_result = json.loads(result.stdout)
+            
+            self._set_headers()
+            self.wfile.write(json.dumps(c_result).encode())
+            
+        except Exception as e:
+            self._set_headers(500)
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _add_chat(self):
+        """Add chat session to splay tree"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            chat_id = data.get('id', '')
+            title = data.get('title', '')
+            timestamp = data.get('timestamp', '')
+            
+            if not chat_id or not title:
+                raise ValueError("Chat ID and title are required")
+            
+            splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
+            
+            if not os.path.exists(splay_path):
+                raise ValueError("Splay tree not compiled")
+            
+            args = [splay_path, 'add', chat_id, title]
+            if timestamp:
+                args.append(str(timestamp))
+            
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            c_result = json.loads(result.stdout)
+            
+            self._set_headers()
+            self.wfile.write(json.dumps(c_result).encode())
+            
+        except Exception as e:
+            self._set_headers(500)
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _access_chat(self):
+        """Access chat session (triggers splay) or delete chat"""
+        try:
+            # Extract chat_id from path: /api/chats/<chat_id>
+            chat_id = self.path.split('/api/chats/')[-1]
+            
+            splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
+            
+            if not os.path.exists(splay_path):
+                raise ValueError("Splay tree not compiled")
+            
+            result = subprocess.run(
+                [splay_path, 'access', chat_id],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            c_result = json.loads(result.stdout)
+            
+            self._set_headers()
+            self.wfile.write(json.dumps(c_result).encode())
+            
+        except Exception as e:
+            self._set_headers(500)
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _clear_chats(self):
+        """Clear all chat sessions from splay tree"""
+        try:
+            splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
+            
+            if not os.path.exists(splay_path):
+                self._set_headers()
+                self.wfile.write(json.dumps({'success': True, 'message': 'No splay tree to clear'}).encode())
+                return
+            
+            result = subprocess.run(
+                [splay_path, 'clear'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            c_result = json.loads(result.stdout)
+            
+            self._set_headers()
+            self.wfile.write(json.dumps(c_result).encode())
+            
+        except Exception as e:
+            self._set_headers(500)
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
 
     def _call_ollama(self, prompt):
         """Call local Ollama API"""

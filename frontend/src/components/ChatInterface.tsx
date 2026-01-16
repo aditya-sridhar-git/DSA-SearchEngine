@@ -165,10 +165,11 @@ export const ChatInterface: React.FC = () => {
         return { chatId, newSessions };
     };
 
-    // Create a new chat with document name as title
-    const createChatFromDocument = (docName: string, firstMessage: Message): { chatId: string, newSessions: ChatSession[] } => {
+    // Create a new chat with operation and document name as title
+    const createChatFromDocument = (docName: string, operation: string, firstMessage: Message): { chatId: string, newSessions: ChatSession[] } => {
         const chatId = Date.now().toString();
-        const title = docName.replace('.txt', ''); // Use document name as title
+        const baseName = docName.replace('.txt', '');
+        const title = `${operation}: ${baseName}`; // e.g., "Replace: renewable_energy"
         const newChat: ChatSession = {
             id: chatId,
             title,
@@ -307,9 +308,9 @@ export const ChatInterface: React.FC = () => {
             timestamp: new Date(),
         };
 
-        // Create a new chat session using the document name
+        // Create a new chat session using the operation and document name
         if (!currentChatId) {
-            createChatFromDocument(uploadedDoc.name, userMessage);
+            createChatFromDocument(uploadedDoc.name, actionLabel || 'Analysis', userMessage);
         } else {
             setMessages(prev => [...prev, userMessage]);
         }
@@ -390,13 +391,8 @@ export const ChatInterface: React.FC = () => {
             } else if (analyzeAction === 'replace') {
                 resultText = `🔄 Replace All: "${data.original_word}" → "${data.replacement_word}"\n\n`;
                 resultText += `Occurrences replaced: ${data.occurrences_replaced}\n\n`;
-                if (data.file_saved) {
-                    resultText += `✅ File saved to: documents/${uploadedDoc?.name}\n\n`;
-                }
                 if (data.occurrences_replaced > 0 && data.modified_text) {
-                    // Update the cached document content with the modified text
-                    setUploadedDoc(prev => prev ? { ...prev, content: data.modified_text } : null);
-                    resultText += `Modified text preview:\n${data.modified_text?.substring(0, 400)}${data.modified_text?.length > 400 ? '...' : ''}`;
+                    resultText += `Modified text:\n${data.modified_text}`;
                 }
             } else if (analyzeAction === 'topk') {
                 resultText = `📊 Top ${data.k} Most Frequent Words\n\n`;
@@ -423,11 +419,7 @@ export const ChatInterface: React.FC = () => {
             setMessages(prev => [...prev, errorMessage]);
         } finally {
             setIsLoading(false);
-            // Don't clear uploadedDoc after replace - keep the modified content for further operations
-            // Only clear for non-replace operations
-            if (analyzeAction !== 'replace') {
-                setUploadedDoc(null);
-            }
+            setUploadedDoc(null);
             setAnalyzeQuery('');
             setReplaceWord('');
         }
@@ -651,17 +643,6 @@ export const ChatInterface: React.FC = () => {
                         >
                             +
                         </button>
-                        {/* Show when there's a modified document in memory */}
-                        {uploadedDoc && (
-                            <button
-                                onClick={() => setShowAnalyzeModal(true)}
-                                className="attach-btn"
-                                title={`Continue with ${uploadedDoc.name}`}
-                                style={{ marginLeft: '4px', backgroundColor: '#4ade80' }}
-                            >
-                                📄
-                            </button>
-                        )}
                         <input
                             type="file"
                             ref={fileInputRef}
