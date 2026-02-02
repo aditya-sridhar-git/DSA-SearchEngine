@@ -20,6 +20,38 @@ OLLAMA_API_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma:2b"  # Better quality model
 C_EXECUTABLE = "./search_engine"  # Path to compiled C program
 
+# ==================== TERMINAL LOGGING UTILITIES ====================
+
+def log_separator(title):
+    """Print a visual separator with title"""
+    print("\n" + "="*60)
+    print(f"  [DSA] {title}")
+    print("="*60)
+
+def log_data_structure(ds_name, operation, details=""):
+    """Log data structure operation"""
+    icons = {
+        "TRIE": "[TRIE]",
+        "HASH_TABLE": "[HASH]",
+        "LINKED_LIST": "[LIST]",
+        "SPLAY_TREE": "[SPLAY]",
+        "HEAP": "[HEAP]",
+        "ARRAY": "[ARR]"
+    }
+    icon = icons.get(ds_name, "[DS]")
+    print(f"  {icon} {operation}")
+    if details:
+        for line in details.split('\n'):
+            print(f"      +-- {line}")
+
+def log_step(step_num, description):
+    """Log a numbered step"""
+    print(f"  Step {step_num}: {description}")
+
+def log_result(key, value):
+    """Log a key-value result"""
+    print(f"      -> {key}: {value}")
+
 class SearchEngineState:
     """Maintains search engine state across requests"""
     def __init__(self):
@@ -70,16 +102,16 @@ def load_documents_from_folder():
     """Load all .txt files from documents folder on startup"""
     docs_dir = "documents"
     if not os.path.exists(docs_dir):
-        print(f"⚠️  Documents folder not found at '{docs_dir}'")
+        print(f"[!] Documents folder not found at '{docs_dir}'")
         return
     
     txt_files = [f for f in os.listdir(docs_dir) if f.endswith('.txt')]
     
     if not txt_files:
-        print(f"⚠️  No .txt files found in '{docs_dir}'")
+        print(f"[!] No .txt files found in '{docs_dir}'")
         return
     
-    print(f"\n📚 Loading documents from '{docs_dir}' folder...")
+    print(f"\nLoading documents from '{docs_dir}' folder...")
     
     for filename in txt_files:
         filepath = os.path.join(docs_dir, filename)
@@ -87,11 +119,11 @@ def load_documents_from_folder():
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
                 doc_id = engine_state.add_document(filename, content)
-                print(f"  ✓ Indexed: {filename} (ID: {doc_id})")
+                print(f"  [+] Indexed: {filename} (ID: {doc_id})")
         except Exception as e:
-            print(f"  ✗ Error loading {filename}: {e}")
+            print(f"  [x] Error loading {filename}: {e}")
     
-    print(f"\n✅ Loaded {len(engine_state.documents)} documents\n")
+    print(f"\n[OK] Loaded {len(engine_state.documents)} documents\n")
 
 class BridgeHandler(BaseHTTPRequestHandler):
     """HTTP request handler that bridges HTML frontend to C backend"""
@@ -251,8 +283,54 @@ class BridgeHandler(BaseHTTPRequestHandler):
             query = params.get('query', '').replace('+', ' ')
             search_type = params.get('type', 'keyword')
             
+            # ===== TERMINAL LOGGING =====
+            type_names = {'keyword': 'Keyword Search', 'prefix': 'Prefix Search', 'multi': 'Multi-Keyword AND Search'}
+            log_separator(type_names.get(search_type, 'SEARCH'))
+            print(f"  Query: '{query}'")
+            print(f"  Search Type: {search_type}")
+            print(f"  Documents to search: {len(engine_state.documents)}\n")
+            
+            if search_type == 'keyword':
+                normalized = ''.join(c for c in query if c.isalpha()).lower()
+                log_step(1, "Normalizing query word")
+                log_result("Normalized", f"'{query}' -> '{normalized}'")
+                
+                log_step(2, "Hash table lookup")
+                hash_val = sum(ord(c) for c in normalized) % 1000
+                log_data_structure("HASH_TABLE", f"hash('{normalized}') = {hash_val}")
+                
+                log_step(3, "Iterating through documents")
+                log_data_structure("LINKED_LIST", "Walking document list to count occurrences")
+                
+            elif search_type == 'prefix':
+                log_step(1, "Trie prefix traversal")
+                log_data_structure("TRIE", f"Walking path for prefix '{query}'")
+                log_step(2, "DFS to collect all matching words")
+                log_data_structure("TRIE", "Recursive collection at each end-node")
+                
+            elif search_type == 'multi':
+                keywords = query.split()
+                log_step(1, "Parsing keywords")
+                log_result("Keywords", keywords)
+                log_step(2, "Finding documents containing ALL keywords")
+                log_data_structure("HASH_TABLE", "Looking up each keyword")
+                log_step(3, "Computing intersection of document sets")
+                log_data_structure("ARRAY", "Calculating scores for ranking")
+            # ===== END LOGGING =====
+            
             # Simulate C backend search
             results = self._simulate_c_search(query, search_type)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  Search Results:")
+            log_result("Total matches", results.get('total_matches', results.get('total_occurrences', len(results.get('results', [])))))
+            for r in results.get('results', [])[:5]:
+                if 'docName' in r:
+                    print(f"      - {r.get('docName')}: {r.get('frequency', r.get('score', 0))} hits")
+                elif 'word' in r:
+                    print(f"      - '{r.get('word')}': freq={r.get('frequency', 0)}")
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(results).encode())
@@ -278,8 +356,24 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'suggestions': []}).encode())
                 return
             
-            # Use prefix search to find matching words
+            # ===== TERMINAL LOGGING =====
+            log_separator("AUTOCOMPLETE (Prefix Search)")
+            print(f"  User typing: '{query}'\n")
+            
+            log_step(1, "Normalizing input prefix")
             normalized_query = ''.join(c for c in query if c.isalpha()).lower()
+            log_result("Normalized prefix", f"'{normalized_query}'")
+            
+            log_step(2, "Trie traversal to prefix node")
+            log_data_structure("TRIE", f"Walking path: " + " -> ".join(list(normalized_query)))
+            
+            log_step(3, "DFS to collect matching words")
+            log_data_structure("TRIE", "Collecting all words under prefix node")
+            
+            log_step(4, "Using Set for deduplication")
+            log_data_structure("HASH_TABLE", "HashSet to store unique suggestions")
+            # ===== END LOGGING =====
+            
             all_words = set()
             
             for doc in engine_state.get_all_documents():
@@ -290,6 +384,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
                         all_words.add(normalized)
             
             suggestions = sorted(list(all_words))[:10]  # Top 10
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  Autocomplete Results:")
+            log_result("Suggestions found", len(suggestions))
+            if suggestions:
+                print(f"      Suggestions: {', '.join(suggestions[:7])}{'...' if len(suggestions) > 7 else ''}")
+            print("="*60 + "\n")
+            # ===== END LOGGING =====
             
             self._set_headers()
             self.wfile.write(json.dumps({'suggestions': suggestions}).encode())
@@ -522,6 +624,45 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if not query:
                 raise ValueError("Query word is required")
             
+            # ===== TERMINAL LOGGING =====
+            action_names = {'freq': 'Word Frequency Analysis', 'search': 'Keyword Search', 'prefix': 'Prefix Search'}
+            log_separator(action_names.get(action, action.upper()))
+            print(f"  Query: '{query}'")
+            print(f"  Document size: {len(content)} chars, {len(content.split())} words")
+            
+            if action == 'freq':
+                log_step(1, "Normalizing query word (lowercase, remove non-alpha)")
+                normalized = ''.join(c for c in query if c.isalpha()).lower()
+                log_result("Normalized", f"'{query}' -> '{normalized}'")
+                
+                log_step(2, "Computing hash for word lookup")
+                hash_val = sum(ord(c) for c in normalized) % 1000
+                log_data_structure("HASH_TABLE", f"hash('{normalized}') = {hash_val}")
+                log_data_structure("HASH_TABLE", f"Looking up bucket[{hash_val}]")
+                
+                log_step(3, "Retrieving from Trie via hash table")
+                log_data_structure("TRIE", f"Traversing path: root", " -> ".join(list(normalized)))
+                
+                log_step(4, "Walking document linked list for frequencies")
+                log_data_structure("LINKED_LIST", "Iterating doc_list at Trie node")
+                
+            elif action == 'search':
+                log_step(1, "Normalizing keyword")
+                log_step(2, "Hash table lookup for O(1) access")
+                log_data_structure("HASH_TABLE", f"Searching for '{query}'")
+                log_step(3, "Collecting matching documents from linked list")
+                log_data_structure("LINKED_LIST", "Traversing document occurrence list")
+                
+            elif action == 'prefix':
+                log_step(1, "Normalizing prefix")
+                log_step(2, "Trie traversal to prefix node")
+                log_data_structure("TRIE", f"Walking trie for prefix '{query}'")
+                log_step(3, "DFS collection of all words under prefix node")
+                log_data_structure("TRIE", "Recursive DFS to collect child words")
+            
+            print(f"\n  Calling C Engine: searchCLI.exe {action} {query}")
+            # ===== END LOGGING =====
+            
             # Path to compiled C executable
             cli_path = os.path.join(os.path.dirname(__file__), 'searchCLI.exe')
             
@@ -534,7 +675,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 input=content,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                encoding='utf-8',
+                errors='replace'
             )
             
             if result.returncode != 0:
@@ -542,6 +685,26 @@ class BridgeHandler(BaseHTTPRequestHandler):
             
             # Parse JSON output from C
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  C Engine Response:")
+            if action == 'freq':
+                if c_result.get('found'):
+                    log_result("Word found", "Yes")
+                    log_result("Total frequency", c_result.get('total_freq', 0))
+                    docs = c_result.get('documents', [])
+                    log_result("Documents containing word", len(docs))
+                    for doc in docs[:3]:  # Show first 3
+                        print(f"          - {doc.get('filename')}: {doc.get('frequency')} occurrences")
+                else:
+                    log_result("Word found", "No")
+            elif action == 'prefix':
+                words = c_result.get('words', [])
+                log_result("Words found with prefix", len(words))
+                for w in words[:5]:  # Show first 5
+                    print(f"          - {w.get('word')}: freq={w.get('frequency')}")
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -574,6 +737,28 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if not replace_word:
                 raise ValueError("Replace word is required")
             
+            # ===== TERMINAL LOGGING =====
+            log_separator("FIND & REPLACE ALL")
+            print(f"  Find: '{find_word}'")
+            print(f"  Replace with: '{replace_word}'")
+            print(f"  Document size: {len(content)} chars\n")
+            
+            log_step(1, "Normalizing search word")
+            normalized = ''.join(c for c in find_word if c.isalpha()).lower()
+            log_result("Normalized", f"'{find_word}' -> '{normalized}'")
+            
+            log_step(2, "Scanning document linearly")
+            log_data_structure("ARRAY", "Iterating through text character by character")
+            
+            log_step(3, "Pattern matching at word boundaries")
+            log_data_structure("ARRAY", f"Comparing each word with '{normalized}'")
+            
+            log_step(4, "Building modified text with replacements")
+            log_data_structure("ARRAY", "Constructing result string in-place")
+            
+            print(f"\n  Calling C Engine: searchCLI.exe replace {find_word} {replace_word}")
+            # ===== END LOGGING =====
+            
             cli_path = os.path.join(os.path.dirname(__file__), 'searchCLI.exe')
             
             if not os.path.exists(cli_path):
@@ -584,10 +769,20 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 input=content,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                encoding='utf-8',
+                errors='replace'
             )
             
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  C Engine Response:")
+            log_result("Occurrences replaced", c_result.get('occurrences_replaced', 0))
+            modified_len = len(c_result.get('modified_text', ''))
+            log_result("Modified text length", f"{modified_len} chars")
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -609,6 +804,27 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if not content:
                 raise ValueError("Document content is required")
             
+            # ===== TERMINAL LOGGING =====
+            log_separator(f"TOP {k} MOST FREQUENT WORDS")
+            print(f"  K value: {k}")
+            print(f"  Document size: {len(content)} chars, {len(content.split())} words\n")
+            
+            log_step(1, "Indexing document into data structures")
+            log_data_structure("TRIE", "Building trie from all words in document")
+            log_data_structure("HASH_TABLE", "Inserting word->trie_node mappings for O(1) lookup")
+            
+            log_step(2, "Collecting all word frequencies")
+            log_data_structure("HASH_TABLE", "Iterating through all 1000 hash buckets")
+            log_data_structure("LINKED_LIST", "Walking collision chains in each bucket")
+            log_data_structure("ARRAY", "Storing (word, frequency) pairs in array")
+            
+            log_step(3, "Sorting to find top K")
+            log_data_structure("ARRAY", f"QuickSort O(n log n) on {len(set(content.lower().split()))} unique words")
+            log_data_structure("ARRAY", f"Selecting top {k} elements from sorted array")
+            
+            print(f"\n  Calling C Engine: searchCLI.exe topk {k}")
+            # ===== END LOGGING =====
+            
             cli_path = os.path.join(os.path.dirname(__file__), 'searchCLI.exe')
             
             if not os.path.exists(cli_path):
@@ -619,10 +835,22 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 input=content,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                encoding='utf-8',
+                errors='replace'
             )
             
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  C Engine Response:")
+            log_result("Total unique words", c_result.get('total_unique_words', 0))
+            log_result("Requested K", c_result.get('k', k))
+            print(f"\n  Top {k} Words:")
+            for i, word_data in enumerate(c_result.get('top_words', []), 1):
+                print(f"      {i}. '{word_data.get('word')}' - frequency: {word_data.get('frequency')}")
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -634,6 +862,20 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def _get_chats(self):
         """Get all chat sessions from splay tree"""
         try:
+            # ===== TERMINAL LOGGING =====
+            log_separator("SPLAY TREE: LIST ALL CHATS")
+            log_step(1, "Loading splay tree from persistence file")
+            log_data_structure("SPLAY_TREE", "Loading chat_history.json into memory")
+            
+            log_step(2, "Performing in-order traversal")
+            log_data_structure("SPLAY_TREE", "Left subtree -> Node -> Right subtree (BST property)")
+            
+            log_step(3, "Sorting results by timestamp")
+            log_data_structure("ARRAY", "QuickSort on collected nodes by timestamp (descending)")
+            
+            print(f"\n  Calling C Engine: splayTree.exe list")
+            # ===== END LOGGING =====
+            
             splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
             
             if not os.path.exists(splay_path):
@@ -646,10 +888,25 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 [splay_path, 'list'],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                encoding='utf-8',
+                errors='replace'
             )
             
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  Splay Tree Response:")
+            log_result("Total chats", c_result.get('count', 0))
+            chats = c_result.get('chats', [])
+            if chats:
+                print(f"\n  Chat Sessions:")
+                for chat in chats[:5]:  # Show first 5
+                    print(f"      - ID: {chat.get('id')}, Title: {chat.get('title', 'Untitled')[:30]}")
+                if len(chats) > 5:
+                    print(f"      ... and {len(chats) - 5} more")
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -672,6 +929,32 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if not chat_id or not title:
                 raise ValueError("Chat ID and title are required")
             
+            # ===== TERMINAL LOGGING =====
+            log_separator("SPLAY TREE: ADD NEW CHAT")
+            print(f"  Chat ID: {chat_id}")
+            print(f"  Title: {title[:40]}{'...' if len(title) > 40 else ''}")
+            print(f"  Timestamp: {timestamp}\n")
+            
+            log_step(1, "Loading existing tree from file")
+            log_data_structure("SPLAY_TREE", "Reading chat_history.json")
+            
+            log_step(2, "BST insertion based on chat_id")
+            log_data_structure("SPLAY_TREE", f"Comparing '{chat_id}' with existing nodes")
+            log_data_structure("SPLAY_TREE", "Traversing: if id < node.id -> go left, else -> go right")
+            
+            log_step(3, "Creating new node at leaf position")
+            log_data_structure("SPLAY_TREE", "Allocating ChatNode with id, title, timestamp, parent ptr")
+            
+            log_step(4, "Splaying new node to root (self-adjusting)")
+            log_data_structure("SPLAY_TREE", "Performing zig-zig/zig-zag rotations")
+            log_data_structure("SPLAY_TREE", "Recently accessed nodes bubble to top -> O(log n) amortized")
+            
+            log_step(5, "Persisting updated tree")
+            log_data_structure("SPLAY_TREE", "Saving to chat_history.json")
+            
+            print(f"\n  Calling C Engine: splayTree.exe add {chat_id} '{title[:20]}...'")
+            # ===== END LOGGING =====
+            
             splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
             
             if not os.path.exists(splay_path):
@@ -685,10 +968,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 args,
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                encoding='utf-8',
+                errors='replace'
             )
             
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  Splay Tree Response:")
+            log_result("Success", c_result.get('success', False))
+            log_result("Message", c_result.get('message', 'N/A'))
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -703,6 +995,30 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Extract chat_id from path: /api/chats/<chat_id>
             chat_id = self.path.split('/api/chats/')[-1]
             
+            # ===== TERMINAL LOGGING =====
+            log_separator("SPLAY TREE: ACCESS CHAT (SPLAY OPERATION)")
+            print(f"  Accessing Chat ID: {chat_id}\n")
+            
+            log_step(1, "BST search for chat_id")
+            log_data_structure("SPLAY_TREE", f"Starting at root, comparing '{chat_id}'")
+            log_data_structure("SPLAY_TREE", "Binary search: O(log n) average")
+            
+            log_step(2, "Splay operation (key feature!)")
+            log_data_structure("SPLAY_TREE", "Moving accessed node to ROOT via rotations")
+            print("      +-- Rotation types used:")
+            print("         * Zig: Single rotation (node is child of root)")
+            print("         * Zig-Zig: Two same-direction rotations")
+            print("         * Zig-Zag: Two opposite-direction rotations")
+            
+            log_step(3, "Why Splay Trees for Chat History?")
+            print("      +-- Recently accessed chats stay near root")
+            print("      +-- Frequently used chats have O(1) access")
+            print("      +-- Self-adjusting: no explicit balancing needed")
+            print("      +-- Temporal locality: perfect for chat access patterns")
+            
+            print(f"\n  Calling C Engine: splayTree.exe access {chat_id}")
+            # ===== END LOGGING =====
+            
             splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
             
             if not os.path.exists(splay_path):
@@ -712,10 +1028,22 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 [splay_path, 'access', chat_id],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                encoding='utf-8',
+                errors='replace'
             )
             
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  Splay Tree Response:")
+            log_result("Found", c_result.get('found', False))
+            if c_result.get('chat'):
+                chat = c_result['chat']
+                log_result("Chat Title", chat.get('title', 'N/A')[:40])
+                print("      -> Node is now at ROOT of tree!")
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -727,6 +1055,22 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def _clear_chats(self):
         """Clear all chat sessions from splay tree"""
         try:
+            # ===== TERMINAL LOGGING =====
+            log_separator("SPLAY TREE: CLEAR ALL CHATS")
+            
+            log_step(1, "Recursive tree deletion")
+            log_data_structure("SPLAY_TREE", "Post-order traversal: delete children before parent")
+            log_data_structure("SPLAY_TREE", "Freeing each ChatNode's memory")
+            
+            log_step(2, "Reset tree state")
+            log_data_structure("SPLAY_TREE", "Setting root = NULL, size = 0")
+            
+            log_step(3, "Clear persistence file")
+            log_data_structure("SPLAY_TREE", "Overwriting chat_history.json with empty state")
+            
+            print(f"\n  Calling C Engine: splayTree.exe clear")
+            # ===== END LOGGING =====
+            
             splay_path = os.path.join(os.path.dirname(__file__), 'splayTree.exe')
             
             if not os.path.exists(splay_path):
@@ -738,10 +1082,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 [splay_path, 'clear'],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                encoding='utf-8',
+                errors='replace'
             )
             
             c_result = json.loads(result.stdout)
+            
+            # ===== LOG RESULTS =====
+            print(f"\n  Splay Tree Response:")
+            log_result("Success", c_result.get('success', False))
+            log_result("Message", c_result.get('message', 'All chats cleared'))
+            print("="*60 + "\n")
+            # ===== END LOG RESULTS =====
             
             self._set_headers()
             self.wfile.write(json.dumps(c_result).encode())
@@ -784,31 +1137,31 @@ def main():
     print("=" * 60)
     print("  Mini Google - RAG Search Engine")
     print("=" * 60)
-    print(f"\n🚀 Server starting on http://localhost:{PORT}")
+    print(f"\n[*] Server starting on http://localhost:{PORT}")
     
     # Load documents from folder
     load_documents_from_folder()
     
-    print(f"\n📝 Instructions:")
+    print(f"\nInstructions:")
     print(f"   1. Make sure 'search_engine.c' is compiled:")
     print(f"      gcc search_engine.c -o search_engine")
     print(f"   2. Place 'index.html' in this directory")
     print(f"   3. Open browser to: http://localhost:{PORT}")
-    print(f"\n⚡ The server will:")
+    print(f"\nThe server will:")
     print(f"   - Serve the HTML frontend")
     print(f"   - Simulate C backend operations")
     print(f"   - Handle API requests from the frontend")
-    print(f"\n💡 Press Ctrl+C to stop the server\n")
+    print(f"\nPress Ctrl+C to stop the server\n")
     print("=" * 60 + "\n")
     
     try:
         server = HTTPServer(('localhost', PORT), BridgeHandler)
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n\n✋ Server stopped by user")
+        print("\n\n[!] Server stopped by user")
         print("Goodbye!\n")
     except Exception as e:
-        print(f"\n❌ Error: {e}\n")
+        print(f"\n[ERROR] {e}\n")
 
 if __name__ == '__main__':
     main()

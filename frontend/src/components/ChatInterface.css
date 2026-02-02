@@ -7,12 +7,15 @@
     --text-secondary: #8e8e8e;
     --accent: #d97757;
     --border: #3a3a3a;
+    /* Dynamic scaling base - scales with zoom */
+    font-size: clamp(12px, calc(12px + 0.25vw), 18px);
 }
 
 .app-layout {
     display: flex;
     height: 100vh;
     width: 100vw;
+    max-width: 100%;
     background: var(--bg-dark);
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
