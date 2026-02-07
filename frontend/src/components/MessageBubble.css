@@ -24,14 +24,14 @@
 }
 
 .message-container.user .message-bubble {
-    background: #3a3a3a;
-    color: #ececec;
+    background: #e8e8e8;
+    color: #1a1a1a;
     border-bottom-right-radius: 0.375rem;
 }
 
 .message-container.ai .message-bubble {
     background: transparent;
-    color: #ececec;
+    color: #1a1a1a;
     padding-left: 0;
 }
 

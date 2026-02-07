@@ -1,12 +1,12 @@
-/* Claude-style dark theme with responsive scaling */
+/* Claude-style light theme with responsive scaling */
 :root {
-    --bg-dark: #1a1a1a;
-    --bg-sidebar: #212121;
-    --bg-input: #2f2f2f;
-    --text-primary: #ececec;
-    --text-secondary: #8e8e8e;
+    --bg-dark: #ffffff;
+    --bg-sidebar: #f7f7f8;
+    --bg-input: #f0f0f1;
+    --text-primary: #1a1a1a;
+    --text-secondary: #6b6b6b;
     --accent: #d97757;
-    --border: #3a3a3a;
+    --border: #e5e5e5;
     /* Dynamic scaling base - scales with zoom */
     font-size: clamp(12px, calc(12px + 0.25vw), 18px);
 }
@@ -258,7 +258,7 @@
     max-width: min(700px, 90vw);
     background: var(--bg-input);
     border: 1px solid var(--border);
-    border-radius: 1.5rem;
+    border-radius: 0;
     padding: 0.5rem 0.75rem;
 }
 
