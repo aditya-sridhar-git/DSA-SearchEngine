@@ -1,4 +1,4 @@
-# 🔍 Mini Google - RAG Search Engine
+# 🔍 Mini Google - Search Engine
 
 A powerful mini search engine that combines **C data structures** (Trie, Hash Table, Linked Lists) with **AI-powered RAG** (Retrieval-Augmented Generation) using Ollama. Features both a sleek React chat interface and a standalone HTML search dashboard.
 
